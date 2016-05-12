@@ -9,6 +9,8 @@ import io.vertx.core.streams.ReadStream;
  */
 public interface Transport
 {
+  String name();
+
   void send(JsonObject contentHandle, FlowControl flowControl, ReadStream<Buffer> stream);
 
   ReadStream<Buffer> receive(final JsonObject contentHandle, final FlowControl flowControl);

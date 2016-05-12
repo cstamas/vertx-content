@@ -26,10 +26,17 @@ public class EventBusTransport
 {
   private static final Logger log = LoggerFactory.getLogger(EventBusTransport.class);
 
+  private static final String NAME = "eventBus";
+
   private final Vertx vertx;
 
   public EventBusTransport(final Vertx vertx) {
     this.vertx = checkNotNull(vertx);
+  }
+
+  @Override
+  public String name() {
+    return NAME;
   }
 
   @Override

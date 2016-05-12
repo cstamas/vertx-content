@@ -20,7 +20,7 @@ import static org.cstamas.vertx.content.ContentManager.require;
 public class FlowControl
     implements Handler<Message<JsonObject>>
 {
-  public enum TxState
+  private enum TxState
   {
     START, SEND, PAUSE, STOP;
 
@@ -34,7 +34,7 @@ public class FlowControl
     }
   }
 
-  public enum TxTransition
+  private enum TxTransition
   {
     BEGIN(ImmutableSet.of(TxState.START), TxState.SEND),
     PAUSE(ImmutableSet.of(TxState.SEND), TxState.PAUSE),

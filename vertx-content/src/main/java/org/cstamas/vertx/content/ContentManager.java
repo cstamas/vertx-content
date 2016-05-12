@@ -5,10 +5,12 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.http.HttpServer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.impl.ContentManagerImpl;
 import org.cstamas.vertx.content.impl.EventBusTransport;
+import org.cstamas.vertx.content.impl.HttpTransport;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -39,6 +41,13 @@ public interface ContentManager
    */
   static ContentManager eventBus(Vertx vertx) {
     return new ContentManagerImpl(vertx, new EventBusTransport(vertx));
+  }
+
+  /**
+   * Creates {@link ContentManager} instance that uses {@link HttpServer} for transport.
+   */
+  static ContentManager http(Vertx vertx) {
+    return new ContentManagerImpl(vertx, new HttpTransport(vertx));
   }
 
   /**
