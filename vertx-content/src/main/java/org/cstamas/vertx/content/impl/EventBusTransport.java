@@ -1,5 +1,7 @@
 package org.cstamas.vertx.content.impl;
 
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
@@ -15,8 +17,8 @@ import org.cstamas.vertx.content.FlowControl;
 import org.cstamas.vertx.content.Transport;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.cstamas.vertx.content.ContentManager.require;
-import static org.cstamas.vertx.content.ContentManager.txId;
+import static org.cstamas.vertx.content.impl.ContentManagerImpl.require;
+import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
 
 /**
  * {@link Transport} implementation that uses {@link EventBus} for transport.
@@ -24,9 +26,9 @@ import static org.cstamas.vertx.content.ContentManager.txId;
 public class EventBusTransport
     implements Transport
 {
-  private static final Logger log = LoggerFactory.getLogger(EventBusTransport.class);
+  public static final String NAME = "eventBus";
 
-  private static final String NAME = "eventBus";
+  private static final Logger log = LoggerFactory.getLogger(EventBusTransport.class);
 
   private final Vertx vertx;
 
@@ -65,71 +67,81 @@ public class EventBusTransport
           pump.start();
         }
     );
-    //flowControl.setOnPauseHandler(
-    //    j -> {
-    //      log.info("PAUSE: " + txId);
-    //      stream.pause();
-    //    }
-    //);
-    //flowControl.setOnResumeHandler(
-    //    j -> {
-    //      log.info("RESUME: " + txId);
-    //      stream.resume();
-    //    }
-    //);
+    flowControl.setOnPauseHandler(
+        j -> {
+          log.info("PAUSE: " + txId);
+          stream.pause();
+        }
+    );
+    flowControl.setOnResumeHandler(
+        j -> {
+          log.info("RESUME: " + txId);
+          stream.resume();
+        }
+    );
   }
 
   @Override
-  public ReadStream<Buffer> receive(final JsonObject contentHandle, final FlowControl flowControl)
+  public void receive(final JsonObject contentHandle,
+                      final FlowControl flowControl,
+                      final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
-    String txId = txId(contentHandle);
-    String contentAddress = require(contentHandle, "contentAddress");
-    MessageConsumer<Buffer> contentReceiver = vertx.eventBus().consumer(contentAddress);
+    Future<ReadStream<Buffer>> future = Future.future();
+    try {
+      String txId = txId(contentHandle);
+      String contentAddress = require(contentHandle, "contentAddress");
+      MessageConsumer<Buffer> contentReceiver = vertx.eventBus().consumer(contentAddress);
 
-    flowControl.setOnEndHandler(
-        json -> {
-          log.info("END: " + txId);
-          contentReceiver.unregister();
+      flowControl.setOnEndHandler(
+          json -> {
+            log.info("END: " + txId);
+            contentReceiver.unregister();
+          }
+      );
+
+      final ReadStream<Buffer> wireStream = contentReceiver.bodyStream();
+      final ReadStream<Buffer> result = new ReadStream<Buffer>()
+      {
+        @Override
+        public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
+          wireStream.exceptionHandler(handler);
+          return this;
         }
-    );
 
-    final ReadStream<Buffer> wireStream = contentReceiver.bodyStream();
-    final ReadStream<Buffer> result = new ReadStream<Buffer>()
-    {
-      @Override
-      public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
-        wireStream.exceptionHandler(handler);
-        return this;
-      }
+        @Override
+        public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
+          wireStream.handler(handler);
+          return this;
+        }
 
-      @Override
-      public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
-        wireStream.handler(handler);
-        return this;
-      }
+        @Override
+        public ReadStream<Buffer> pause() {
+          wireStream.pause();
+          flowControl.pause();
+          return this;
+        }
 
-      @Override
-      public ReadStream<Buffer> pause() {
-        wireStream.pause();
-        flowControl.pause();
-        return this;
-      }
+        @Override
+        public ReadStream<Buffer> resume() {
+          wireStream.resume();
+          flowControl.resume();
+          return this;
+        }
 
-      @Override
-      public ReadStream<Buffer> resume() {
-        wireStream.resume();
-        flowControl.resume();
-        return this;
-      }
+        @Override
+        public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
+          wireStream.endHandler(endHandler);
+          return this;
+        }
+      };
 
-      @Override
-      public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
-        wireStream.endHandler(endHandler);
-        return this;
-      }
-    };
+      flowControl.begin();
+      future.complete(result);
+    }
+    catch (Exception e) {
+      future.fail(e);
+    }
+    streamHandler.handle(future);
 
-    flowControl.begin();
-    return result;
   }
 }

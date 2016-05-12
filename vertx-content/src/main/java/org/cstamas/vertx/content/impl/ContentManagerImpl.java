@@ -17,8 +17,6 @@ import org.cstamas.vertx.content.Transport;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.cstamas.vertx.content.ContentManager.require;
-import static org.cstamas.vertx.content.ContentManager.txId;
 
 /**
  * {@link ContentManager} implementation that establishes {@link FlowControl} and passes the work to {@link Transport}.
@@ -26,13 +24,29 @@ import static org.cstamas.vertx.content.ContentManager.txId;
 public class ContentManagerImpl
     implements ContentManager
 {
-  protected static final Logger log = LoggerFactory.getLogger(ContentManagerImpl.class);
+  public static final String TXID = "txId";
+
+  /**
+   * Helper to ensure that requested key is in JSON.
+   */
+  public static String require(final JsonObject jsonObject, final String key) {
+    checkArgument(jsonObject.containsKey(key), "JSON %s does not have required key %s", jsonObject, key);
+    return jsonObject.getString(key);
+  }
+
+  /**
+   * Helper to ensure that transaction ID is present and get it.
+   */
+  public static String txId(final JsonObject jsonObject) {
+    return require(jsonObject, TXID);
+  }
+
+  private static final Logger log = LoggerFactory.getLogger(ContentManagerImpl.class);
 
   private static final String FLOW_ADDRESS_PREFIX = "contentManager.flow.";
 
   private final Vertx vertx;
 
-  // TODO: a map of transports?
   private final Transport transport;
 
   public ContentManagerImpl(final Vertx vertx, final Transport transport) {
@@ -41,9 +55,11 @@ public class ContentManagerImpl
   }
 
   @Override
-  public ContentManagerImpl send(final ReadStream<Buffer> stream, final Handler<AsyncResult<JsonObject>> handler)
+  public ContentManagerImpl send(final ReadStream<Buffer> stream,
+                                 final Handler<AsyncResult<JsonObject>> handler)
   {
     checkNotNull(stream);
+    checkNotNull(handler);
     vertx.getOrCreateContext().runOnContext(
         w -> {
           Future<JsonObject> future = Future.future();
@@ -56,16 +72,14 @@ public class ContentManagerImpl
                 .put("transport", transport.name())
                 .put("senderFlowAddress", senderFlowAddress)
                 .put("receiverFlowAddress", receiverFlowAddress);
-            final FlowControl flowControl = new FlowControl(vertx, senderFlowAddress, receiverFlowAddress);
+            final FlowControl flowControl = new FlowControlImpl(vertx, senderFlowAddress, receiverFlowAddress);
             transport.send(contentHandle, flowControl, stream);
             future.complete(contentHandle);
           }
           catch (Exception e) {
             future.fail(e);
           }
-          if (handler != null) {
-            handler.handle(future);
-          }
+          handler.handle(future);
         }
     );
     return this;
@@ -76,28 +90,20 @@ public class ContentManagerImpl
                                     final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
     checkNotNull(contentHandle);
+    checkNotNull(streamHandler);
     txId(contentHandle); // SANITY
-    checkArgument(transport.name().equals(contentHandle.getString("transport")), "Invalid transport: %s"); // SANITY
+    String transportName = require(contentHandle, "transport");
+    checkArgument(transport.name().equals(transportName), "Invalid transport: %s", transport);
     vertx.getOrCreateContext().runOnContext(
         w -> {
-          Future<ReadStream<Buffer>> future = Future.future();
-          try {
-            future.complete(
-                transport.receive(
-                    contentHandle,
-                    new FlowControl(vertx,
-                        require(contentHandle, "receiverFlowAddress"),
-                        require(contentHandle, "senderFlowAddress")
-                    )
-                )
-            );
-          }
-          catch (Exception e) {
-            future.fail(e);
-          }
-          if (streamHandler != null) {
-            streamHandler.handle(future);
-          }
+          transport.receive(
+              contentHandle,
+              new FlowControlImpl(vertx,
+                  require(contentHandle, "receiverFlowAddress"),
+                  require(contentHandle, "senderFlowAddress")
+              ),
+              streamHandler
+          );
         }
     );
     return this;

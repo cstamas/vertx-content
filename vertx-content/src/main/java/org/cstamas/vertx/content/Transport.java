@@ -1,5 +1,7 @@
 package org.cstamas.vertx.content;
 
+import io.vertx.core.AsyncResult;
+import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.ReadStream;
@@ -11,7 +13,11 @@ public interface Transport
 {
   String name();
 
-  void send(JsonObject contentHandle, FlowControl flowControl, ReadStream<Buffer> stream);
+  void send(JsonObject contentHandle,
+            FlowControl flowControl,
+            ReadStream<Buffer> stream);
 
-  ReadStream<Buffer> receive(final JsonObject contentHandle, final FlowControl flowControl);
+  void receive(JsonObject contentHandle,
+               FlowControl flowControl,
+               Handler<AsyncResult<ReadStream<Buffer>>> streamHandler);
 }

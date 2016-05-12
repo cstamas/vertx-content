@@ -3,6 +3,7 @@ package org.cstamas.vertx.content.examples;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.file.OpenOptions;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -21,7 +22,8 @@ public class ContentReceiverVerticle
 
   @Override
   public void start(final Future<Void> startFuture) throws Exception {
-    ContentManager contentManager = ContentManager.eventBus(vertx);
+    ContentManager contentManager = ContentManager.http(vertx, new HttpServerOptions().setHost("localhost").setPort(8081));
+    //ContentManager contentManager = ContentManager.eventBus(vertx);
 
     vertx.eventBus().consumer(
         ADDRESS,

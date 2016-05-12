@@ -7,6 +7,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.file.OpenOptions;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -27,7 +28,10 @@ public class ContentSenderVerticle
 
   @Override
   public void start(final Future<Void> startFuture) throws Exception {
-    vertx.eventBus().consumer("sendFile", handler(ContentManager.eventBus(vertx)));
+    ContentManager contentManager = ContentManager.http(vertx, new HttpServerOptions().setHost("localhost").setPort(8081));
+    //ContentManager contentManager = ContentManager.eventBus(vertx);
+
+    vertx.eventBus().consumer("sendFile", handler(contentManager));
     super.start(startFuture);
   }
 
