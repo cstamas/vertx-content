@@ -69,7 +69,6 @@ public class ContentManagerImpl
             final String receiverFlowAddress = FLOW_ADDRESS_PREFIX + txId + ".r";
             JsonObject contentHandle = new JsonObject()
                 .put(TXID, txId)
-                .put("transport", transport.name())
                 .put("senderFlowAddress", senderFlowAddress)
                 .put("receiverFlowAddress", receiverFlowAddress);
             final FlowControl flowControl = new FlowControlImpl(vertx, senderFlowAddress, receiverFlowAddress);
@@ -92,8 +91,6 @@ public class ContentManagerImpl
     checkNotNull(contentHandle);
     checkNotNull(streamHandler);
     txId(contentHandle); // SANITY
-    String transportName = require(contentHandle, "transport");
-    checkArgument(transport.name().equals(transportName), "Invalid transport: %s", transport);
     vertx.getOrCreateContext().runOnContext(
         w -> {
           transport.receive(

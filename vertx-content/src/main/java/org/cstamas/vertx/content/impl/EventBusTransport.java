@@ -26,19 +26,12 @@ import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
 public class EventBusTransport
     implements Transport
 {
-  public static final String NAME = "eventBus";
-
   private static final Logger log = LoggerFactory.getLogger(EventBusTransport.class);
 
   private final Vertx vertx;
 
   public EventBusTransport(final Vertx vertx) {
     this.vertx = checkNotNull(vertx);
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

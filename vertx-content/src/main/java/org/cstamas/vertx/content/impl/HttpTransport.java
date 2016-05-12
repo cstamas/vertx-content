@@ -29,8 +29,6 @@ import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
 public class HttpTransport
     implements Transport
 {
-  public static final String NAME = "http";
-
   private static final Logger log = LoggerFactory.getLogger(HttpTransport.class);
 
   private final Vertx vertx;
@@ -76,11 +74,6 @@ public class HttpTransport
   }
 
   @Override
-  public String name() {
-    return NAME;
-  }
-
-  @Override
   public void send(final JsonObject contentHandle,
                    final FlowControl flowControl,
                    final ReadStream<Buffer> stream)
@@ -109,7 +102,42 @@ public class HttpTransport
         resp -> {
           log.info("HTTP Resp: " + resp);
           if (resp.statusCode() == 200) {
-            streamHandler.handle(Future.succeededFuture(resp));
+            final ReadStream<Buffer> result = new ReadStream<Buffer>()
+            {
+              @Override
+              public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
+                resp.exceptionHandler(handler);
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
+                resp.handler(handler);
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> pause() {
+                resp.pause();
+                flowControl.pause();
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> resume() {
+                resp.resume();
+                flowControl.resume();
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
+                resp.endHandler(endHandler);
+                return this;
+              }
+            };
+            streamHandler.handle(Future.succeededFuture(result));
+            flowControl.begin();
           }
           else {
             streamHandler.handle(Future.failedFuture(new IllegalArgumentException("Unexpected response " + resp.statusCode())));
