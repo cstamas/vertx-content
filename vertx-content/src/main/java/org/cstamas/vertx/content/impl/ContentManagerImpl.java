@@ -15,8 +15,10 @@ import org.cstamas.vertx.content.ContentManager;
 import org.cstamas.vertx.content.FlowControl;
 import org.cstamas.vertx.content.Transport;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.cstamas.vertx.content.ContentManager.require;
+import static org.cstamas.vertx.content.ContentManager.txId;
 
 /**
  * {@link ContentManager} implementation that establishes {@link FlowControl} and passes the work to {@link Transport}.
@@ -30,6 +32,7 @@ public class ContentManagerImpl
 
   private final Vertx vertx;
 
+  // TODO: a map of transports?
   private final Transport transport;
 
   public ContentManagerImpl(final Vertx vertx, final Transport transport) {
@@ -50,6 +53,7 @@ public class ContentManagerImpl
             final String receiverFlowAddress = FLOW_ADDRESS_PREFIX + txId + ".r";
             JsonObject contentHandle = new JsonObject()
                 .put(TXID, txId)
+                .put("transport", transport.name())
                 .put("senderFlowAddress", senderFlowAddress)
                 .put("receiverFlowAddress", receiverFlowAddress);
             final FlowControl flowControl = new FlowControl(vertx, senderFlowAddress, receiverFlowAddress);
@@ -72,6 +76,8 @@ public class ContentManagerImpl
                                     final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
     checkNotNull(contentHandle);
+    txId(contentHandle); // SANITY
+    checkArgument(transport.name().equals(contentHandle.getString("transport")), "Invalid transport: %s"); // SANITY
     vertx.getOrCreateContext().runOnContext(
         w -> {
           Future<ReadStream<Buffer>> future = Future.future();
