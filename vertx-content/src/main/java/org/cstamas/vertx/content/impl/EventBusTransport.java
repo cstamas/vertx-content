@@ -62,18 +62,6 @@ public class EventBusTransport
           pump.start();
         }
     );
-    flowControl.setOnPauseHandler(
-        j -> {
-          log.info("PAUSE: " + txId);
-          stream.pause();
-        }
-    );
-    flowControl.setOnResumeHandler(
-        j -> {
-          log.info("RESUME: " + txId);
-          stream.resume();
-        }
-    );
   }
 
   @Override
@@ -96,44 +84,8 @@ public class EventBusTransport
           }
       );
 
-      final ReadStream<Buffer> wireStream = contentReceiver.bodyStream();
-      final ReadStream<Buffer> result = new ReadStream<Buffer>()
-      {
-        @Override
-        public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
-          wireStream.exceptionHandler(handler);
-          return this;
-        }
-
-        @Override
-        public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
-          wireStream.handler(handler);
-          return this;
-        }
-
-        @Override
-        public ReadStream<Buffer> pause() {
-          wireStream.pause();
-          flowControl.pause();
-          return this;
-        }
-
-        @Override
-        public ReadStream<Buffer> resume() {
-          wireStream.resume();
-          flowControl.resume();
-          return this;
-        }
-
-        @Override
-        public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
-          wireStream.endHandler(endHandler);
-          return this;
-        }
-      };
-
       flowControl.begin();
-      future.complete(result);
+      future.complete(contentReceiver.bodyStream());
     }
     catch (Exception e) {
       future.fail(e);

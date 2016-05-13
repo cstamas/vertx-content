@@ -8,9 +8,11 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.file.AsyncFile;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -63,14 +65,16 @@ public class HttpTransport
                 content = contents.remove(txId);
               }
               if (content == null) {
-                log.info("Nope: " + contents.keySet());
                 req.response().setStatusCode(404).end();
               }
               else {
-                content.endHandler(v -> req.response().end());
-                req.response().setStatusCode(200).setChunked(true);
-                Pump pump = Pump.pump(content, req.response());
-                pump.start();
+                HttpServerResponse response = req.response();
+                content.endHandler(v -> response.end());
+                response
+                    .setStatusCode(200)
+                    .setChunked(true)
+                    .putHeader("Content-Type", "application/octet-stream");
+                Pump.pump(content, response).start();
               }
             }
         ).listen();
@@ -109,47 +113,9 @@ public class HttpTransport
           log.info("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
           resp.headers().forEach(e -> log.info(e.getKey() + " : " + e.getValue()));
           log.info(resp.headers());
-          resp.endHandler(v -> flowControl.end());
           if (resp.statusCode() == 200) {
-            final ReadStream<Buffer> result = new ReadStream<Buffer>()
-            {
-              @Override
-              public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
-                resp.exceptionHandler(handler);
-                return this;
-              }
-
-              @Override
-              public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
-                resp.handler(handler);
-                return this;
-              }
-
-              @Override
-              public ReadStream<Buffer> pause() {
-                resp.pause();
-                return this;
-              }
-
-              @Override
-              public ReadStream<Buffer> resume() {
-                resp.resume();
-                return this;
-              }
-
-              @Override
-              public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
-                resp.endHandler(
-                    v -> {
-                      flowControl.end();
-                      endHandler.handle(v);
-                    }
-                );
-                return this;
-              }
-            };
+            streamHandler.handle(Future.succeededFuture(resp));
             flowControl.begin();
-            streamHandler.handle(Future.succeededFuture(result));
           }
           else {
             streamHandler

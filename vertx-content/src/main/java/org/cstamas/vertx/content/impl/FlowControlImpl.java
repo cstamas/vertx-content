@@ -88,7 +88,7 @@ public class FlowControlImpl
   public void handle(final Message<JsonObject> event) {
     final JsonObject message = event.body();
     TxTransition transition = TxTransition.valueOf(require(message, "transition"));
-    state = state.transition(transition);
+    hearTransition(transition);
     switch (transition) {
       case BEGIN:
         if (onBeginHandler != null) {
@@ -138,33 +138,38 @@ public class FlowControlImpl
    * Begins the flow, usually invoked by receiver when receiving end is set up.
    */
   public void begin() {
-    transition(TxTransition.BEGIN);
+    tellTransition(TxTransition.BEGIN);
   }
 
   /**
    * Pauses the flow, usually invoked by receiver.
    */
   public void pause() {
-    transition(TxTransition.PAUSE);
+    tellTransition(TxTransition.PAUSE);
   }
 
   /**
    * Resumes the flow, usually invoked by receiver.
    */
   public void resume() {
-    transition(TxTransition.RESUME);
+    tellTransition(TxTransition.RESUME);
   }
 
   /**
    * Ends the flow, usually invoked by sender (at stream end).
    */
   public void end() {
-    transition(TxTransition.END);
+    tellTransition(TxTransition.END);
     messageConsumer.unregister();
   }
 
-  private void transition(TxTransition transition) {
-    log.info(txId + " >> " + transition);
+  private void hearTransition(TxTransition transition) {
+    log.info("HEAR " + txId + " >> " + transition);
+    state = state.transition(transition);
+  }
+
+  private void tellTransition(TxTransition transition) {
+    log.info("TELL " + txId + " >> " + transition);
     state = state.transition(transition);
     JsonObject jsonObject = new JsonObject()
         .put("transition", transition);

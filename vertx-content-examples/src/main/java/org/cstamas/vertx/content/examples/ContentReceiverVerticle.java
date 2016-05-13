@@ -62,11 +62,11 @@ public class ContentReceiverVerticle
                     AsyncFile file = oh.result();
                     stream.endHandler(
                         h -> {
-                          file.end();
+                          file.flush().end();
                           message.reply(new JsonObject().put("status", 201));
                         }
                     );
-                    Pump.pump(stream, oh.result()).start();
+                    Pump.pump(stream, file).start();
                   }
                 }
             );
