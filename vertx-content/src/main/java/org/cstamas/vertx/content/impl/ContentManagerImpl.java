@@ -71,7 +71,7 @@ public class ContentManagerImpl
                 .put(TXID, txId)
                 .put("senderFlowAddress", senderFlowAddress)
                 .put("receiverFlowAddress", receiverFlowAddress);
-            final FlowControl flowControl = new FlowControlImpl(vertx, senderFlowAddress, receiverFlowAddress);
+            final FlowControl flowControl = new FlowControlImpl(vertx, txId, senderFlowAddress, receiverFlowAddress);
             transport.send(contentHandle, flowControl, stream);
             future.complete(contentHandle);
           }
@@ -90,12 +90,14 @@ public class ContentManagerImpl
   {
     checkNotNull(contentHandle);
     checkNotNull(streamHandler);
-    txId(contentHandle); // SANITY
+    String txId = txId(contentHandle);
     vertx.getOrCreateContext().runOnContext(
         w -> {
           transport.receive(
               contentHandle,
-              new FlowControlImpl(vertx,
+              new FlowControlImpl(
+                  vertx,
+                  txId,
                   require(contentHandle, "receiverFlowAddress"),
                   require(contentHandle, "senderFlowAddress")
               ),

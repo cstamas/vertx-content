@@ -2,62 +2,77 @@ package org.cstamas.vertx.content.examples;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.eventbus.Message;
+import io.vertx.core.file.AsyncFile;
 import io.vertx.core.file.OpenOptions;
-import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.streams.Pump;
+import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.ContentManager;
 
 /**
- * Created by cstamas on 11/05/16.
+ * Content receiver verticle, that receives the file and saves it under path it got from sender appending it with
+ * {@code
+ * .received}.
  */
 public class ContentReceiverVerticle
     extends AbstractVerticle
+    implements Handler<Message<JsonObject>>
 {
   private static final Logger log = LoggerFactory.getLogger(ContentReceiverVerticle.class);
 
   public static final String ADDRESS = "content.receiver";
 
+  private ContentManager contentManager;
+
   @Override
   public void start(final Future<Void> startFuture) throws Exception {
-    ContentManager contentManager = ContentManager.http(vertx, new HttpServerOptions().setHost("localhost").setPort(8081));
-    //ContentManager contentManager = ContentManager.eventBus(vertx);
+    contentManager = Utility.create(vertx, config());
+    vertx.eventBus().consumer(ADDRESS, this);
+    super.start(startFuture);
+  }
 
-    vertx.eventBus().consumer(
-        ADDRESS,
-        mh -> {
-          JsonObject contentHandle = (JsonObject) mh.body();
-          contentManager.receive(
-              contentHandle,
-              ch -> {
-                if (ch.failed()) {
-                  log.error("R: ", ch.cause());
-                }
-                else {
-                  String path = contentHandle.getString("name") + ".received";
-                  log.info("R: " + path);
-                  vertx.fileSystem().open(
-                      path,
-                      new OpenOptions(),
-                      oh -> {
-                        if (oh.failed()) {
-                          log.error("E:", oh.cause());
+  @Override
+  public void handle(final Message<JsonObject> message) {
+    JsonObject contentHandle = message.body();
+    String path = contentHandle.getString("path") + ".received";
+    log.info("R: " + path);
+    contentManager.receive(
+        contentHandle,
+        streamResult -> {
+          if (streamResult.failed()) {
+            log.error("R: ", streamResult.cause());
+            message.fail(500, streamResult.cause().getMessage());
+          }
+          else {
+            vertx.fileSystem().open(
+                path,
+                new OpenOptions(),
+                oh -> {
+                  if (oh.failed()) {
+                    log.error("E:", oh.cause());
+                    message.fail(500, oh.cause().getMessage());
+                  }
+                  else {
+                    ReadStream<Buffer> stream = streamResult.result();
+                    AsyncFile file = oh.result();
+                    stream.endHandler(
+                        h -> {
+                          file.end();
+                          message.reply(new JsonObject().put("status", 201));
                         }
-                        else {
-                          Pump.pump(ch.result(), oh.result()).start();
-                          ch.result().endHandler(h -> {
-                            log.info("DONE");
-                          });
-                        }
-                      }
-                  );
+                    );
+                    Pump.pump(stream, oh.result()).start();
+                  }
                 }
-              }
-          );
+            );
+          }
         }
     );
-    super.start(startFuture);
+
   }
 }

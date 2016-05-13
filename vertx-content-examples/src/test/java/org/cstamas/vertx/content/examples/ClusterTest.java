@@ -1,45 +1,102 @@
 package org.cstamas.vertx.content.examples;
 
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
-import io.vertx.core.logging.LoggerFactory;
-import io.vertx.core.logging.SLF4JLogDelegateFactory;
+import io.vertx.core.json.JsonObject;
+import org.junit.BeforeClass;
 import org.junit.Test;
-import org.slf4j.bridge.SLF4JBridgeHandler;
+
+import static org.cstamas.vertx.content.examples.TestUtil.blockingCloseAll;
+import static org.cstamas.vertx.content.examples.TestUtil.initLogging;
+import static org.cstamas.vertx.content.examples.TestUtil.log;
 
 /**
  * Junit test.
  */
 public class ClusterTest
 {
-  static {
-    System.setProperty("vertx.logger-delegate-factory-class-name", SLF4JLogDelegateFactory.class.getName());
-    SLF4JBridgeHandler.removeHandlersForRootLogger();
-    SLF4JBridgeHandler.install();
+  @BeforeClass
+  public static void before() {
+    initLogging();
   }
 
   @Test
-  public void sendFile() throws Exception {
-    CountDownLatch latch = new CountDownLatch(2);
+  public void sendFileHttp() throws Exception {
+    sendFile(new JsonObject().put("type", "http"));
+  }
+
+  @Test
+  public void sendFileEb() throws Exception {
+    sendFile(new JsonObject().put("type", "eventbus"));
+  }
+
+  private void sendFile(final JsonObject config) throws Exception {
+    ArrayList<Vertx> vertxInstances = new ArrayList<>();
+    CountDownLatch deploymentLatch = new CountDownLatch(2);
     Vertx.clusteredVertx(new VertxOptions(), v -> {
-      v.result().deployVerticle(ContentSenderVerticle.class.getName());
-      latch.countDown();
+      if (v.succeeded()) {
+        Vertx instance = v.result();
+        vertxInstances.add(instance);
+        instance.deployVerticle(
+            ContentSenderVerticle.class.getName(),
+            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8081)),
+            deploymentHandler -> {
+              deploymentLatch.countDown();
+            }
+        );
+      }
+      else {
+        throw new AssertionError("Could not deploy: " + v.cause());
+      }
     });
-
     Vertx.clusteredVertx(new VertxOptions(), v -> {
-      v.result().deployVerticle(ContentReceiverVerticle.class.getName());
-      latch.countDown();
+      if (v.succeeded()) {
+        Vertx instance = v.result();
+        vertxInstances.add(instance);
+        instance.deployVerticle(
+            ContentReceiverVerticle.class.getName(),
+            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8082)),
+            deploymentHandler -> {
+              deploymentLatch.countDown();
+            }
+        );
+      }
+      else {
+        throw new AssertionError("Could not deploy: " + v.cause());
+      }
     });
+    deploymentLatch.await();
 
-    latch.await();
-
+    CountDownLatch operationLatch = new CountDownLatch(1);
     Vertx.clusteredVertx(new VertxOptions(), v -> {
-      LoggerFactory.getLogger("TEST").info("Firing event");
-      v.result().eventBus().send("sendFile", "/Users/cstamas/tmp/testfile.json");
+      if (v.succeeded()) {
+        Vertx instance = v.result();
+        vertxInstances.add(instance);
+        log().info("Firing event");
+        instance.eventBus().send(
+            ContentSenderVerticle.ADDRESS,
+            new JsonObject().put("path", "/Users/cstamas/tmp/testfile.json"),
+            reply -> {
+              if (reply.succeeded()) {
+                log().info("Succeeded " + reply.result().body().toString());
+              }
+              else {
+                log().info("Failed ", reply.cause());
+              }
+              operationLatch.countDown();
+            }
+        );
+      }
+      else {
+        throw new AssertionError("Could not deploy: " + v.cause());
+      }
     });
+    operationLatch.await();
 
-    Thread.sleep(10000);
+    blockingCloseAll(vertxInstances);
   }
 }

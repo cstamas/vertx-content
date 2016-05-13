@@ -56,6 +56,8 @@ public class FlowControlImpl
 
   private final Vertx vertx;
 
+  private final String txId;
+
   private final String otherAddress;
 
   private final MessageConsumer<JsonObject> messageConsumer;
@@ -71,10 +73,12 @@ public class FlowControlImpl
   private Handler<JsonObject> onEndHandler;
 
   public FlowControlImpl(final Vertx vertx,
+                         final String txId,
                          final String myAddress,
                          final String otherAddress)
   {
     this.vertx = checkNotNull(vertx);
+    this.txId = checkNotNull(txId);
     this.otherAddress = checkNotNull(otherAddress);
     this.state = TxState.START;
     this.messageConsumer = vertx.eventBus().consumer(myAddress, this);
@@ -160,7 +164,7 @@ public class FlowControlImpl
   }
 
   private void transition(TxTransition transition) {
-    log.info("TRANSITION " + state + "->" + transition.to);
+    log.info(txId + " >> " + transition);
     state = state.transition(transition);
     JsonObject jsonObject = new JsonObject()
         .put("transition", transition);

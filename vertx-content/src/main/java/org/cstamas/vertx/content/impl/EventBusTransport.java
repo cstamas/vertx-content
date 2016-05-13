@@ -8,6 +8,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.eventbus.MessageProducer;
+import io.vertx.core.eventbus.impl.HandlerRegistration;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
@@ -32,6 +33,7 @@ public class EventBusTransport
 
   public EventBusTransport(final Vertx vertx) {
     this.vertx = checkNotNull(vertx);
+    log.info("Created " + getClass().getSimpleName());
   }
 
   @Override
@@ -48,7 +50,7 @@ public class EventBusTransport
 
     // stream tells when we end flow
     stream.endHandler(
-        j -> {
+        v -> {
           flowControl.end();
         }
     );
@@ -88,7 +90,9 @@ public class EventBusTransport
       flowControl.setOnEndHandler(
           json -> {
             log.info("END: " + txId);
-            contentReceiver.unregister();
+            // SHOULD BE: contentReceiver.unregister();
+            // BUT A HACK: workaround for a bug: MessageConsumer.unregister() does NOT invoke endHandler
+            ((HandlerRegistration) contentReceiver).unregister(true);
           }
       );
 

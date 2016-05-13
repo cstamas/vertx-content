@@ -19,6 +19,7 @@ import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.FlowControl;
 import org.cstamas.vertx.content.Transport;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.require;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
@@ -47,26 +48,28 @@ public class HttpTransport
     this.httpServerOptions = httpServerOptions;
     this.httpServer = createServer();
     this.httpClient = vertx.createHttpClient();
+    log.info("Created " + getClass().getSimpleName() + " (" + httpServerOptions.getHost() + ":" +
+        httpServerOptions.getPort() + ")");
   }
 
   private HttpServer createServer() {
     return vertx.createHttpServer(httpServerOptions)
         .requestHandler(
             req -> {
-              log.info("HTTP REQ: " + req.method() + " " + req.path());
               String txId = req.path().substring(1);
-              ReadStream<Buffer> content = contents.remove(txId);
+              log.info("REQ: " + req.method() + " " + txId);
+              ReadStream<Buffer> content = null;
+              synchronized (contents) {
+                content = contents.remove(txId);
+              }
               if (content == null) {
+                log.info("Nope: " + contents.keySet());
                 req.response().setStatusCode(404).end();
               }
               else {
+                content.endHandler(v -> req.response().end());
                 req.response().setStatusCode(200).setChunked(true);
                 Pump pump = Pump.pump(content, req.response());
-                content.endHandler(
-                    v -> {
-                      req.response().end();
-                    }
-                );
                 pump.start();
               }
             }
@@ -79,15 +82,18 @@ public class HttpTransport
                    final ReadStream<Buffer> stream)
   {
     String txId = txId(contentHandle);
-    contents.put(txId, stream);
-    String url = String.format(
-        "http://%s:%s/%s",
-        httpServerOptions.getHost(),
-        httpServerOptions.getPort(),
-        txId
-    );
-    contentHandle.put("url", url);
-    log.info("S: URL " + url);
+    synchronized (contents) {
+      checkArgument(!contents.containsKey(txId), "Content txId already exists", txId);
+      contents.put(txId, stream);
+      String url = String.format(
+          "http://%s:%s/%s",
+          httpServerOptions.getHost(),
+          httpServerOptions.getPort(),
+          txId
+      );
+      contentHandle.put("url", url);
+      log.info("S: URL " + url);
+    }
   }
 
   @Override
@@ -100,7 +106,10 @@ public class HttpTransport
     httpClient.getAbs(
         url,
         resp -> {
-          log.info("HTTP Resp: " + resp);
+          log.info("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
+          resp.headers().forEach(e -> log.info(e.getKey() + " : " + e.getValue()));
+          log.info(resp.headers());
+          resp.endHandler(v -> flowControl.end());
           if (resp.statusCode() == 200) {
             final ReadStream<Buffer> result = new ReadStream<Buffer>()
             {
@@ -119,28 +128,32 @@ public class HttpTransport
               @Override
               public ReadStream<Buffer> pause() {
                 resp.pause();
-                flowControl.pause();
                 return this;
               }
 
               @Override
               public ReadStream<Buffer> resume() {
                 resp.resume();
-                flowControl.resume();
                 return this;
               }
 
               @Override
               public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
-                resp.endHandler(endHandler);
+                resp.endHandler(
+                    v -> {
+                      flowControl.end();
+                      endHandler.handle(v);
+                    }
+                );
                 return this;
               }
             };
-            streamHandler.handle(Future.succeededFuture(result));
             flowControl.begin();
+            streamHandler.handle(Future.succeededFuture(result));
           }
           else {
-            streamHandler.handle(Future.failedFuture(new IllegalArgumentException("Unexpected response " + resp.statusCode())));
+            streamHandler
+                .handle(Future.failedFuture(new IllegalArgumentException("Unexpected response " + resp.statusCode())));
           }
         }
     ).end();
