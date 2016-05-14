@@ -91,6 +91,5 @@ public class EventBusTransport
       future.fail(e);
     }
     streamHandler.handle(future);
-
   }
 }
