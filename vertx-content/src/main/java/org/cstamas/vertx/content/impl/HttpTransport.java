@@ -1,5 +1,6 @@
 package org.cstamas.vertx.content.impl;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -8,7 +9,6 @@ import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.file.AsyncFile;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
@@ -23,6 +23,7 @@ import org.cstamas.vertx.content.Transport;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.cstamas.vertx.content.impl.ContentManagerImpl.TXID;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.require;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
 
@@ -42,14 +43,11 @@ public class HttpTransport
 
   private final HttpServer httpServer;
 
-  private final HttpClient httpClient;
-
   public HttpTransport(final Vertx vertx, final HttpServerOptions httpServerOptions) {
     this.vertx = checkNotNull(vertx);
     this.contents = new HashMap<>();
     this.httpServerOptions = httpServerOptions;
     this.httpServer = createServer();
-    this.httpClient = vertx.createHttpClient();
     log.info("Created " + getClass().getSimpleName() + " (" + httpServerOptions.getHost() + ":" +
         httpServerOptions.getPort() + ")");
   }
@@ -89,15 +87,15 @@ public class HttpTransport
     synchronized (contents) {
       checkArgument(!contents.containsKey(txId), "Content txId already exists", txId);
       contents.put(txId, stream);
-      String url = String.format(
-          "http://%s:%s/%s",
-          httpServerOptions.getHost(),
-          httpServerOptions.getPort(),
-          txId
-      );
-      contentHandle.put("url", url);
-      log.info("S: URL " + url);
     }
+    String url = String.format(
+        "http://%s:%s/%s",
+        httpServerOptions.getHost(),
+        httpServerOptions.getPort(),
+        txId
+    );
+    contentHandle.put("url", url);
+    log.info("S: URL " + url);
   }
 
   @Override
@@ -105,17 +103,65 @@ public class HttpTransport
                       final FlowControl flowControl,
                       final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
-    String url = require(contentHandle, "url");
+    String txId = require(contentHandle, TXID);
+    URI url = URI.create(require(contentHandle, "url"));
     log.info("R: URL " + url);
-    httpClient.getAbs(
-        url,
+    HttpClient client = vertx.createHttpClient();
+    client.get(
+        url.getPort(),
+        url.getHost(),
+        "/" + txId,
         resp -> {
           log.info("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
           resp.headers().forEach(e -> log.info(e.getKey() + " : " + e.getValue()));
-          log.info(resp.headers());
+
+          flowControl.begin();
+          resp.endHandler(
+              v -> {
+                flowControl.end();
+                client.close();
+              }
+          );
           if (resp.statusCode() == 200) {
-            streamHandler.handle(Future.succeededFuture(resp));
-            flowControl.begin();
+            ReadStream<Buffer> result = new ReadStream<Buffer>()
+            {
+              @Override
+              public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
+                resp.exceptionHandler(handler);
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
+                resp.handler(handler);
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> pause() {
+                resp.pause();
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> resume() {
+                resp.resume();
+                return this;
+              }
+
+              @Override
+              public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
+                resp.endHandler(
+                    v -> {
+                      flowControl.end();
+                      client.close();
+                      endHandler.handle(v);
+                    }
+                );
+                return this;
+              }
+            };
+            streamHandler.handle(Future.succeededFuture(result));
           }
           else {
             streamHandler
@@ -125,3 +171,4 @@ public class HttpTransport
     ).end();
   }
 }
+
