@@ -11,11 +11,7 @@ import io.vertx.core.streams.ReadStream;
  */
 public interface Transport
 {
-  void send(JsonObject contentHandle,
-            FlowControl flowControl,
-            ReadStream<Buffer> stream);
+  void send(JsonObject contentHandle, FlowControl flowControl, ReadStream<Buffer> stream);
 
-  void receive(JsonObject contentHandle,
-               FlowControl flowControl,
-               Handler<AsyncResult<ReadStream<Buffer>>> streamHandler);
+  void receive(JsonObject contentHandle, FlowControl flowControl, Handler<AsyncResult<ReadStream<Buffer>>> streamHandler);
 }
