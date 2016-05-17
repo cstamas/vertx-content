@@ -115,7 +115,6 @@ public class HttpTransport
           log.info("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
           resp.headers().forEach(e -> log.info(e.getKey() + " : " + e.getValue()));
 
-          flowControl.begin();
           resp.endHandler(
               v -> {
                 flowControl.end();
@@ -162,6 +161,7 @@ public class HttpTransport
               }
             };
             streamHandler.handle(Future.succeededFuture(result));
+            flowControl.begin();
           }
           else {
             streamHandler

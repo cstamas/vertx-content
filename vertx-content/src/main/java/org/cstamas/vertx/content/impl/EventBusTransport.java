@@ -84,8 +84,8 @@ public class EventBusTransport
           }
       );
 
-      flowControl.begin();
       future.complete(contentReceiver.bodyStream());
+      flowControl.begin();
     }
     catch (Exception e) {
       future.fail(e);
