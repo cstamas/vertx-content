@@ -41,21 +41,21 @@ public class ContentReceiverVerticle
     JsonObject contentHandle = message.body();
     String path = contentHandle.getString("path") + ".received";
     log.info("R: " + path);
-    contentManager.receive(
-        contentHandle,
-        streamResult -> {
-          if (streamResult.failed()) {
-            log.error("R: ", streamResult.cause());
-            message.fail(500, streamResult.cause().getMessage());
+    vertx.fileSystem().open(
+        path,
+        new OpenOptions(),
+        oh -> {
+          if (oh.failed()) {
+            log.error("E:", oh.cause());
+            message.fail(500, oh.cause().getMessage());
           }
           else {
-            vertx.fileSystem().open(
-                path,
-                new OpenOptions(),
-                oh -> {
-                  if (oh.failed()) {
-                    log.error("E:", oh.cause());
-                    message.fail(500, oh.cause().getMessage());
+            contentManager.receive(
+                contentHandle,
+                streamResult -> {
+                  if (streamResult.failed()) {
+                    log.error("R: ", streamResult.cause());
+                    message.fail(500, streamResult.cause().getMessage());
                   }
                   else {
                     ReadStream<Buffer> stream = streamResult.result();
@@ -63,7 +63,7 @@ public class ContentReceiverVerticle
                     stream.endHandler(
                         h -> {
                           file.flush().end();
-                          message.reply(new JsonObject().put("status", 201));
+                          message.reply(new JsonObject().put("status", 201).put("path", path));
                         }
                     );
                     Pump.pump(stream, file).start();
@@ -73,6 +73,5 @@ public class ContentReceiverVerticle
           }
         }
     );
-
   }
 }
