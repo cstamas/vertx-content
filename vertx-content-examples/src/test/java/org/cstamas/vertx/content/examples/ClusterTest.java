@@ -1,22 +1,28 @@
 package org.cstamas.vertx.content.examples;
 
 import java.util.ArrayList;
-import java.util.concurrent.CountDownLatch;
 
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.unit.Async;
+import io.vertx.ext.unit.TestContext;
+import io.vertx.ext.unit.junit.VertxUnitRunner;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import static org.cstamas.vertx.content.examples.TestUtil.blockingCloseAll;
+import static org.cstamas.vertx.content.examples.TestUtil.createDummyFile;
 import static org.cstamas.vertx.content.examples.TestUtil.initLogging;
 import static org.cstamas.vertx.content.examples.TestUtil.log;
+import static org.cstamas.vertx.content.examples.TestUtil.verifyFilesEqual;
 
 /**
  * Junit test.
  */
+@RunWith(VertxUnitRunner.class)
 public class ClusterTest
 {
   @BeforeClass
@@ -25,18 +31,30 @@ public class ClusterTest
   }
 
   @Test
-  public void sendFileHttp() throws Exception {
-    sendFile(new JsonObject().put("type", "http"));
+  public void sendFileHttpSmall(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "http"), 15000);
   }
 
   @Test
-  public void sendFileEb() throws Exception {
-    sendFile(new JsonObject().put("type", "eventbus"));
+  public void sendFileHttpBig(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "http"), 8000000);
   }
 
-  private void sendFile(final JsonObject config) throws Exception {
+  @Test
+  public void sendFileEbSmall(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "eventbus"), 15000);
+  }
+
+  @Test
+  public void sendFileEbBig(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "eventbus"), 8000000);
+  }
+
+  private void sendFile(final TestContext testContext, final JsonObject config, final long sourceSize)
+      throws Exception
+  {
     ArrayList<Vertx> vertxInstances = new ArrayList<>();
-    CountDownLatch deploymentLatch = new CountDownLatch(2);
+    Async deploy = testContext.async(2);
     Vertx.clusteredVertx(new VertxOptions(), v -> {
       if (v.succeeded()) {
         Vertx instance = v.result();
@@ -45,7 +63,7 @@ public class ClusterTest
             ContentSenderVerticle.class.getName(),
             new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8081)),
             deploymentHandler -> {
-              deploymentLatch.countDown();
+              deploy.countDown();
             }
         );
       }
@@ -61,7 +79,7 @@ public class ClusterTest
             ContentReceiverVerticle.class.getName(),
             new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8082)),
             deploymentHandler -> {
-              deploymentLatch.countDown();
+              deploy.countDown();
             }
         );
       }
@@ -69,9 +87,12 @@ public class ClusterTest
         throw new AssertionError("Could not deploy: " + v.cause());
       }
     });
-    deploymentLatch.await();
 
-    CountDownLatch operationLatch = new CountDownLatch(1);
+    String sourcePath = createDummyFile(sourceSize);
+
+    deploy.awaitSuccess();
+
+    Async operation = testContext.async();
     Vertx.clusteredVertx(new VertxOptions(), v -> {
       if (v.succeeded()) {
         Vertx instance = v.result();
@@ -79,15 +100,25 @@ public class ClusterTest
         log().info("Firing event");
         instance.eventBus().send(
             ContentSenderVerticle.ADDRESS,
-            new JsonObject().put("path", "/Users/cstamas/tmp/testfile.json"),
+            new JsonObject().put("path", sourcePath),
             reply -> {
-              if (reply.succeeded()) {
-                log().info("Succeeded " + reply.result().body().toString());
+              try {
+                if (reply.succeeded()) {
+                  JsonObject result = (JsonObject) reply.result().body();
+                  log().info("Succeeded " + result.getInteger("status"));
+                  testContext.assertTrue(
+                      verifyFilesEqual(sourcePath, result.getString("path")),
+                      "Transport corrupted files"
+                  );
+                }
+                else {
+                  log().info("Failed ", reply.cause());
+                  testContext.assertTrue(false, reply.cause().getMessage());
+                }
               }
-              else {
-                log().info("Failed ", reply.cause());
+              finally {
+                operation.complete();
               }
-              operationLatch.countDown();
             }
         );
       }
@@ -95,7 +126,7 @@ public class ClusterTest
         throw new AssertionError("Could not deploy: " + v.cause());
       }
     });
-    operationLatch.await();
+    operation.awaitSuccess();
 
     blockingCloseAll(vertxInstances);
   }
