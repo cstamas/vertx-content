@@ -42,7 +42,7 @@ public class ContentSenderVerticle
         fileResult -> {
           if (fileResult.succeeded()) {
             AsyncFile file = fileResult.result();
-            log.info("S: " + path + " (" + file + ")");
+            log.info("S: " + path);
             contentManager.send(file,
                 contentHandlerResult -> {
                   if (contentHandlerResult.succeeded()) {
