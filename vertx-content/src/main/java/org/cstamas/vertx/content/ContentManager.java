@@ -4,12 +4,10 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.impl.ContentManagerImpl;
-import org.cstamas.vertx.content.impl.EventBusTransport;
 import org.cstamas.vertx.content.impl.HttpTransport;
 
 /**
@@ -17,13 +15,6 @@ import org.cstamas.vertx.content.impl.HttpTransport;
  */
 public interface ContentManager
 {
-  /**
-   * Creates {@link ContentManager} instance using {@link EventBusTransport}.
-   */
-  static ContentManager eventBus(final Vertx vertx) {
-    return new ContentManagerImpl(vertx, new EventBusTransport(vertx));
-  }
-
   /**
    * Creates {@link ContentManager} instance using {@link HttpTransport}.
    */
@@ -33,13 +24,12 @@ public interface ContentManager
 
   /**
    * Should be called by content sender to send a stream. Method will return a {@link JsonObject} that needs to be
-   * passed over to far end that uses this same service by any means (event bus?).
+   * passed over by some means to the far end that want to receive the content.
    */
   ContentManager send(ReadStream<Buffer> stream, Handler<AsyncResult<JsonObject>> handler);
 
   /**
-   * Should be called by content receiver, to actually get the content. It is detail how {@link JsonObject} content
-   * handle arrives, but sending it via {@link EventBus} seems as one of the viable options.
+   * Should be called by content receiver, to get the content.
    */
   ContentManager receive(JsonObject contentHandle, Handler<AsyncResult<ReadStream<Buffer>>> streamHandler);
 }

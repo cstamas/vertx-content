@@ -38,16 +38,6 @@ public class SimpleTest
     sendFile(testContext, new JsonObject().put("type", "http"), 8000000);
   }
 
-  @Test
-  public void sendFileEbSmall(final TestContext testContext) throws Exception {
-    sendFile(testContext, new JsonObject().put("type", "eventbus"), 15000);
-  }
-
-  @Test
-  public void sendFileEbBig(final TestContext testContext) throws Exception {
-    sendFile(testContext, new JsonObject().put("type", "eventbus"), 8000000);
-  }
-
   private void sendFile(final TestContext testContext, final JsonObject config, final long sourceFileSize)
       throws Exception
   {

@@ -12,19 +12,18 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.ContentManager;
-import org.cstamas.vertx.content.FlowControl;
 import org.cstamas.vertx.content.Transport;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * {@link ContentManager} implementation that establishes {@link FlowControl} and passes the work to {@link Transport}.
+ * {@link ContentManager} implementation that establishes {@link Transport}.
  */
 public class ContentManagerImpl
     implements ContentManager
 {
-  public static final String TXID = "txId";
+  private static final String TX_ID = "txId";
 
   /**
    * Helper to ensure that requested key is in JSON.
@@ -38,12 +37,10 @@ public class ContentManagerImpl
    * Helper to ensure that transaction ID is present and get it.
    */
   public static String txId(final JsonObject jsonObject) {
-    return require(jsonObject, TXID);
+    return require(jsonObject, TX_ID);
   }
 
   private static final Logger log = LoggerFactory.getLogger(ContentManagerImpl.class);
-
-  private static final String FLOW_ADDRESS_PREFIX = "contentManager.flow.";
 
   private final Vertx vertx;
 
@@ -65,14 +62,9 @@ public class ContentManagerImpl
           Future<JsonObject> future = Future.future();
           try {
             final String txId = UUID.randomUUID().toString();
-            final String senderFlowAddress = FLOW_ADDRESS_PREFIX + txId + ".s";
-            final String receiverFlowAddress = FLOW_ADDRESS_PREFIX + txId + ".r";
             JsonObject contentHandle = new JsonObject()
-                .put(TXID, txId)
-                .put("senderFlowAddress", senderFlowAddress)
-                .put("receiverFlowAddress", receiverFlowAddress);
-            final FlowControl flowControl = new FlowControlImpl(vertx, txId, senderFlowAddress, receiverFlowAddress);
-            transport.send(contentHandle, flowControl, stream);
+                .put(TX_ID, txId);
+            transport.send(contentHandle, stream);
             future.complete(contentHandle);
           }
           catch (Exception e) {
@@ -90,17 +82,10 @@ public class ContentManagerImpl
   {
     checkNotNull(contentHandle);
     checkNotNull(streamHandler);
-    String txId = txId(contentHandle);
     vertx.getOrCreateContext().runOnContext(
         w -> {
           transport.receive(
               contentHandle,
-              new FlowControlImpl(
-                  vertx,
-                  txId,
-                  require(contentHandle, "receiverFlowAddress"),
-                  require(contentHandle, "senderFlowAddress")
-              ),
               streamHandler
           );
         }

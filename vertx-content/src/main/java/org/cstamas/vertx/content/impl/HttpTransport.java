@@ -18,12 +18,10 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.streams.Pump;
 import io.vertx.core.streams.ReadStream;
-import org.cstamas.vertx.content.FlowControl;
 import org.cstamas.vertx.content.Transport;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.cstamas.vertx.content.impl.ContentManagerImpl.TXID;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.require;
 import static org.cstamas.vertx.content.impl.ContentManagerImpl.txId;
 
@@ -57,7 +55,7 @@ public class HttpTransport
         .requestHandler(
             req -> {
               String txId = req.path().substring(1);
-              log.info("REQ: " + req.method() + " " + txId);
+              log.debug("REQ: " + req.method() + " " + txId);
               ReadStream<Buffer> content = null;
               synchronized (contents) {
                 content = contents.remove(txId);
@@ -80,7 +78,6 @@ public class HttpTransport
 
   @Override
   public void send(final JsonObject contentHandle,
-                   final FlowControl flowControl,
                    final ReadStream<Buffer> stream)
   {
     String txId = txId(contentHandle);
@@ -95,29 +92,27 @@ public class HttpTransport
         txId
     );
     contentHandle.put("url", url);
-    log.info("S: URL " + url);
   }
 
   @Override
   public void receive(final JsonObject contentHandle,
-                      final FlowControl flowControl,
                       final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
-    String txId = require(contentHandle, TXID);
+    String txId = txId(contentHandle);
     URI url = URI.create(require(contentHandle, "url"));
-    log.info("R: URL " + url);
     HttpClient client = vertx.createHttpClient();
     client.get(
         url.getPort(),
         url.getHost(),
         "/" + txId,
         resp -> {
-          log.info("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
-          resp.headers().forEach(e -> log.info(e.getKey() + " : " + e.getValue()));
+          if (log.isDebugEnabled()) {
+            log.debug("HTTP Resp: " + resp.statusCode() + " " + resp.statusMessage());
+            resp.headers().forEach(e -> log.debug(e.getKey() + " : " + e.getValue()));
+          }
 
           resp.endHandler(
               v -> {
-                flowControl.end();
                 client.close();
               }
           );
@@ -152,7 +147,6 @@ public class HttpTransport
               public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
                 resp.endHandler(
                     v -> {
-                      flowControl.end();
                       client.close();
                       endHandler.handle(v);
                     }
@@ -161,7 +155,6 @@ public class HttpTransport
               }
             };
             streamHandler.handle(Future.succeededFuture(result));
-            flowControl.begin();
           }
           else {
             streamHandler
