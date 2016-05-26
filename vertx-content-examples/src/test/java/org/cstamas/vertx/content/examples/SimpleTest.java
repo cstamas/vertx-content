@@ -38,6 +38,16 @@ public class SimpleTest
     sendFile(testContext, new JsonObject().put("type", "http"), 8000000);
   }
 
+  @Test
+  public void sendFileSharedFileSmall(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "sharedFile"), 15000);
+  }
+
+  @Test
+  public void sendFileSharedFileBig(final TestContext testContext) throws Exception {
+    sendFile(testContext, new JsonObject().put("type", "sharedFile"), 8000000);
+  }
+
   private void sendFile(final TestContext testContext, final JsonObject config, final long sourceFileSize)
       throws Exception
   {

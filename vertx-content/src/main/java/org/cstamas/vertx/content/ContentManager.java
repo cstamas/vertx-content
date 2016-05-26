@@ -9,6 +9,7 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.streams.ReadStream;
 import org.cstamas.vertx.content.impl.ContentManagerImpl;
 import org.cstamas.vertx.content.impl.HttpTransport;
+import org.cstamas.vertx.content.impl.SharedFileTransport;
 
 /**
  * Content manager, to send streams across verticle instances backed by various strategies and channels.
@@ -20,6 +21,13 @@ public interface ContentManager
    */
   static ContentManager http(final Vertx vertx, final HttpServerOptions httpServerOptions) {
     return new ContentManagerImpl(vertx, new HttpTransport(vertx, httpServerOptions));
+  }
+
+  /**
+   * Creates {@link ContentManager} instance using {@link SharedFileTransport}.
+   */
+  static ContentManager sharedFile(final Vertx vertx, final String sharedDirectory) {
+    return new ContentManagerImpl(vertx, new SharedFileTransport(vertx, sharedDirectory));
   }
 
   /**
