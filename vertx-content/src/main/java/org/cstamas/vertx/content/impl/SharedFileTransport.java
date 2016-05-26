@@ -87,16 +87,57 @@ public class SharedFileTransport
                       final Handler<AsyncResult<ReadStream<Buffer>>> streamHandler)
   {
     String txId = txId(contentHandle);
+    String path = resolve(txId);
     MessageConsumer<JsonObject> receiver = vertx.eventBus().consumer(notifyAddress(txId));
     receiver.handler(
         m -> {
           vertx.fileSystem().open(
-              resolve(txId),
+              path,
               new OpenOptions().setCreate(false),
               r -> {
                 try {
                   if (r.succeeded()) {
-                    streamHandler.handle(Future.succeededFuture(r.result()));
+                    AsyncFile file = r.result();
+                    file.endHandler(
+                        v -> vertx.fileSystem().deleteBlocking(path)
+                    );
+                    ReadStream<Buffer> result = new ReadStream<Buffer>() {
+                      @Override
+                      public ReadStream<Buffer> exceptionHandler(final Handler<Throwable> handler) {
+                        file.exceptionHandler(handler);
+                        return this;
+                      }
+
+                      @Override
+                      public ReadStream<Buffer> handler(final Handler<Buffer> handler) {
+                        file.handler(handler);
+                        return this;
+                      }
+
+                      @Override
+                      public ReadStream<Buffer> pause() {
+                        file.pause();
+                        return this;
+                      }
+
+                      @Override
+                      public ReadStream<Buffer> resume() {
+                        file.resume();
+                        return this;
+                      }
+
+                      @Override
+                      public ReadStream<Buffer> endHandler(final Handler<Void> endHandler) {
+                        file.endHandler(
+                            v -> {
+                              vertx.fileSystem().deleteBlocking(path);
+                              endHandler.handle(v);
+                            }
+                        );
+                        return this;
+                      }
+                    };
+                    streamHandler.handle(Future.succeededFuture(result));
                   }
                   else {
                     streamHandler.handle(Future.failedFuture(r.cause()));
