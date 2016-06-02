@@ -2,18 +2,18 @@ package org.cstamas.vertx.content.examples;
 
 import java.util.ArrayList;
 
+import com.jayway.awaitility.Awaitility;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.unit.Async;
 import io.vertx.ext.unit.TestContext;
 import io.vertx.ext.unit.junit.VertxUnitRunner;
+import io.vertx.spi.cluster.hazelcast.HazelcastClusterManager;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import static org.cstamas.vertx.content.examples.TestUtil.blockingCloseAll;
 import static org.cstamas.vertx.content.examples.TestUtil.createDummyFile;
 import static org.cstamas.vertx.content.examples.TestUtil.initLogging;
 import static org.cstamas.vertx.content.examples.TestUtil.log;
@@ -54,17 +54,13 @@ public class ClusterTest
       throws Exception
   {
     ArrayList<Vertx> vertxInstances = new ArrayList<>();
-    Async deploy = testContext.async(2);
-    Vertx.clusteredVertx(new VertxOptions(), v -> {
+    Vertx.clusteredVertx(new VertxOptions().setClusterManager(new HazelcastClusterManager()), v -> {
       if (v.succeeded()) {
         Vertx instance = v.result();
         vertxInstances.add(instance);
         instance.deployVerticle(
             ContentSenderVerticle.class.getName(),
-            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8081)),
-            deploymentHandler -> {
-              deploy.countDown();
-            }
+            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8081))
         );
       }
       else {
@@ -77,10 +73,7 @@ public class ClusterTest
         vertxInstances.add(instance);
         instance.deployVerticle(
             ContentReceiverVerticle.class.getName(),
-            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8082)),
-            deploymentHandler -> {
-              deploy.countDown();
-            }
+            new DeploymentOptions().setConfig(config.copy().put("host", "localhost").put("port", 8082))
         );
       }
       else {
@@ -90,13 +83,14 @@ public class ClusterTest
 
     String sourcePath = createDummyFile(sourceSize);
 
-    deploy.awaitSuccess();
-
-    Async operation = testContext.async();
-    Vertx.clusteredVertx(new VertxOptions(), v -> {
+    HazelcastClusterManager clusterManager = new HazelcastClusterManager();
+    Vertx.clusteredVertx(new VertxOptions().setClusterManager(clusterManager), v -> {
       if (v.succeeded()) {
         Vertx instance = v.result();
         vertxInstances.add(instance);
+
+        Awaitility.await().until(() -> clusterManager.getNodes().size() == 3);
+
         log().info("Firing event");
         instance.eventBus().send(
             ContentSenderVerticle.ADDRESS,
@@ -117,7 +111,7 @@ public class ClusterTest
                 }
               }
               finally {
-                operation.complete();
+                vertxInstances.forEach(vertx -> vertx.close());
               }
             }
         );
@@ -126,8 +120,5 @@ public class ClusterTest
         throw new AssertionError("Could not deploy: " + v.cause());
       }
     });
-    operation.awaitSuccess();
-
-    blockingCloseAll(vertxInstances);
   }
 }
